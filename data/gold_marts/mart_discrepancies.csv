@@ -1,0 +1,10 @@
+anomaly_id,source,category,symptom,resolution_action
+DISC-001,Device Sync,Schema,"Optical HR key renamed from \"hr\" to \"heart_rate\" after firmware 2.4.0","Preserved raw keys in Bronze; unified into \"hr\" using F.coalesce in Silver."
+DISC-002,Device Sync,Schema,"GPS coordinates nested inside \"gps: {lat, lon, hdop}\" in App 5.2.0","Dynamically extracted lat/lon from nested or flat structure, preserving coordinates across all drops."
+DISC-003,Device Sync,Types,"Cadence encoded as string in drop_1 (\"116\") vs integer in drops 2 & 3",Safely cast all cadence values to integer with range validation (80-240 SPM).
+DISC-004,Device Sync,Sampling,Sampling frequency doubled from 1 Hz to 2 Hz (subsecond timestamps) on firmware 2.4.0,Calculated consecutive sample deltas via Window F.lag(); allocated exact time delta and capped intervals across gaps.
+DISC-005,Vendor API,Duplication & Conflict,sessions_page_4_retry.json contained 48 duplicate sessions; Se06bc0e7 had conflicting duration (2040s vs 2400s),"Preserved all occurrences in Bronze. Corroborated against 2,040 sensor samples in drop_3 and deterministically selected 2040s."
+DISC-006,Roster,Identity,Device D013 transferred from Hamza Tariq to Mehak Noor on 14 August,"Built Slowly Changing Dimension (dim_athlete) date-bounding device ownership (Hamza until Aug 11, Mehak from Aug 14)."
+DISC-007,Roster,Squad Move,Bilal Ahmed transferred from Endurance to Speed squad on 12 August,Applied date-aware squad attribution in dim_athlete; sessions prior to Aug 12 count toward Endurance.
+DISC-008,Coach App,Data Quality,"Inconsistent names (ALI RAZA, Ali  Raza, Ali R.) with late entry timestamps","Cleaned names using regex lookup; matched strictly on session_date and workout order, ignoring late entered_at."
+DISC-009,Device Sync,Duplication,Mobile companion app uploaded identical duplicate batches (e.g. Baea8e6fa-8 and B1c77ecc9-7) 38 seconds apart,"Deduplicated sensor samples on (device_id, sample_time) keeping earliest batch receipt."
