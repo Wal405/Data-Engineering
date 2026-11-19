@@ -1,0 +1,582 @@
+
+# ============================================================
+# ENTERPRISE E-COMMERCE DATA PLATFORM
+# Environment: DEV
+# Metadata-driven configuration for 9 Olist datasets
+# ============================================================
+
+environment: dev
+
+platform:
+  catalog: ecommerce_dev
+
+  schemas:
+    bronze: bronze
+    silver: silver
+    gold: gold
+    config: config
+    monitoring: monitoring
+
+  volumes:
+    raw_source_root: /Volumes/ecommerce_dev/bronze/raw_olist_source
+    streaming_state_root: /Volumes/ecommerce_dev/config/streaming_state
+
+# ============================================================
+# DEFAULT INGESTION CONFIGURATION
+# ============================================================
+
+defaults:
+  source_format: csv
+
+  csv_options:
+    header: "true"
+    delimiter: ","
+    quote: '"'
+    escape: '"'
+    multiLine: "true"
+    mode: PERMISSIVE
+    columnNameOfCorruptRecord: _corrupt_record
+
+  autoloader_options:
+    cloudFiles.format: csv
+    cloudFiles.schemaEvolutionMode: rescue
+    cloudFiles.inferColumnTypes: "false"
+    rescuedDataColumn: _rescued_data
+
+  ingestion:
+    mode: incremental
+    checkpoint_directory: checkpoints
+    schema_directory: schemas
+    target_format: delta
+
+# ============================================================
+# DATASET METADATA REGISTRY
+# ============================================================
+
+datasets:
+
+  # ----------------------------------------------------------
+  # 1. CUSTOMERS
+  # ----------------------------------------------------------
+
+  customers:
+    source_id: olist_customers
+    file_pattern: olist_customers_dataset.csv
+
+    bronze_table: bronze_customers
+    silver_table: silver_customers
+
+    load_type: scd2
+    business_keys:
+      - customer_id
+    tracked_columns:
+      - customer_unique_id
+      - customer_zip_code_prefix
+      - customer_city
+      - customer_state
+
+    columns:
+      - name: customer_id
+        type: string
+        nullable: false
+
+      - name: customer_unique_id
+        type: string
+        nullable: false
+
+      - name: customer_zip_code_prefix
+        type: string
+        nullable: true
+
+      - name: customer_city
+        type: string
+        nullable: true
+
+      - name: customer_state
+        type: string
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - customer_id
+        - customer_unique_id
+
+      unique_keys:
+        - customer_id
+
+  # ----------------------------------------------------------
+  # 2. ORDERS
+  # ----------------------------------------------------------
+
+  orders:
+    source_id: olist_orders
+    file_pattern: olist_orders_dataset.csv
+
+    bronze_table: bronze_orders
+    silver_table: silver_orders
+
+    load_type: merge
+
+    business_keys:
+      - order_id
+
+    watermark_column: order_purchase_timestamp
+
+    columns:
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: customer_id
+        type: string
+        nullable: false
+
+      - name: order_status
+        type: string
+        nullable: false
+
+      - name: order_purchase_timestamp
+        type: timestamp
+        nullable: true
+
+      - name: order_approved_at
+        type: timestamp
+        nullable: true
+
+      - name: order_delivered_carrier_date
+        type: timestamp
+        nullable: true
+
+      - name: order_delivered_customer_date
+        type: timestamp
+        nullable: true
+
+      - name: order_estimated_delivery_date
+        type: timestamp
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - order_id
+        - customer_id
+        - order_status
+
+      unique_keys:
+        - order_id
+
+      allowed_values:
+        order_status:
+          - created
+          - approved
+          - invoiced
+          - processing
+          - shipped
+          - delivered
+          - unavailable
+          - canceled
+
+      foreign_keys:
+        - column: customer_id
+          ref_table: silver_customers
+          ref_column: customer_id
+
+  # ----------------------------------------------------------
+  # 3. ORDER ITEMS
+  # ----------------------------------------------------------
+
+  order_items:
+    source_id: olist_order_items
+    file_pattern: olist_order_items_dataset.csv
+
+    bronze_table: bronze_order_items
+    silver_table: silver_order_items
+
+    load_type: merge
+
+    business_keys:
+      - order_id
+      - order_item_id
+
+    columns:
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: order_item_id
+        type: int
+        nullable: false
+
+      - name: product_id
+        type: string
+        nullable: false
+
+      - name: seller_id
+        type: string
+        nullable: false
+
+      - name: shipping_limit_date
+        type: timestamp
+        nullable: true
+
+      - name: price
+        type: decimal(10,2)
+        nullable: false
+
+      - name: freight_value
+        type: decimal(10,2)
+        nullable: false
+
+    quality_rules:
+      not_null:
+        - order_id
+        - order_item_id
+        - product_id
+        - seller_id
+        - price
+        - freight_value
+
+      unique_keys:
+        - order_id
+        - order_item_id
+
+      non_negative:
+        - price
+        - freight_value
+
+      foreign_keys:
+        - column: order_id
+          ref_table: silver_orders
+          ref_column: order_id
+
+        - column: product_id
+          ref_table: silver_products
+          ref_column: product_id
+
+        - column: seller_id
+          ref_table: silver_sellers
+          ref_column: seller_id
+
+  # ----------------------------------------------------------
+  # 4. ORDER PAYMENTS
+  # ----------------------------------------------------------
+
+  order_payments:
+    source_id: olist_order_payments
+    file_pattern: olist_order_payments_dataset.csv
+
+    bronze_table: bronze_order_payments
+    silver_table: silver_order_payments
+
+    load_type: merge
+
+    business_keys:
+      - order_id
+      - payment_sequential
+
+    columns:
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: payment_sequential
+        type: int
+        nullable: false
+
+      - name: payment_type
+        type: string
+        nullable: false
+
+      - name: payment_installments
+        type: int
+        nullable: true
+
+      - name: payment_value
+        type: decimal(10,2)
+        nullable: false
+
+    quality_rules:
+      not_null:
+        - order_id
+        - payment_sequential
+        - payment_type
+        - payment_value
+
+      unique_keys:
+        - order_id
+        - payment_sequential
+
+      non_negative:
+        - payment_value
+
+      foreign_keys:
+        - column: order_id
+          ref_table: silver_orders
+          ref_column: order_id
+
+  # ----------------------------------------------------------
+  # 5. ORDER REVIEWS
+  # ----------------------------------------------------------
+
+  order_reviews:
+    source_id: olist_order_reviews
+    file_pattern: olist_order_reviews_dataset.csv
+
+    bronze_table: bronze_order_reviews
+    silver_table: silver_order_reviews
+
+    load_type: merge
+
+    business_keys:
+      - review_id
+      - order_id
+
+    columns:
+      - name: review_id
+        type: string
+        nullable: false
+
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: review_score
+        type: int
+        nullable: false
+
+      - name: review_comment_title
+        type: string
+        nullable: true
+
+      - name: review_comment_message
+        type: string
+        nullable: true
+
+      - name: review_creation_date
+        type: timestamp
+        nullable: true
+
+      - name: review_answer_timestamp
+        type: timestamp
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - review_id
+        - order_id
+        - review_score
+
+      unique_keys:
+        - review_id
+        - order_id
+
+      range_checks:
+        review_score:
+          min: 1
+          max: 5
+
+      foreign_keys:
+        - column: order_id
+          ref_table: silver_orders
+          ref_column: order_id
+
+  # ----------------------------------------------------------
+  # 6. PRODUCTS
+  # ----------------------------------------------------------
+
+  products:
+    source_id: olist_products
+    file_pattern: olist_products_dataset.csv
+
+    bronze_table: bronze_products
+    silver_table: silver_products
+
+    load_type: scd2
+
+    business_keys:
+      - product_id
+
+    tracked_columns:
+      - product_category_name
+      - product_weight_g
+      - product_length_cm
+      - product_height_cm
+      - product_width_cm
+
+    columns:
+      - name: product_id
+        type: string
+        nullable: false
+
+      - name: product_category_name
+        type: string
+        nullable: true
+
+      - name: product_name_lenght
+        type: int
+        nullable: true
+
+      - name: product_description_lenght
+        type: int
+        nullable: true
+
+      - name: product_photos_qty
+        type: int
+        nullable: true
+
+      - name: product_weight_g
+        type: int
+        nullable: true
+
+      - name: product_length_cm
+        type: int
+        nullable: true
+
+      - name: product_height_cm
+        type: int
+        nullable: true
+
+      - name: product_width_cm
+        type: int
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - product_id
+
+      unique_keys:
+        - product_id
+
+  # ----------------------------------------------------------
+  # 7. SELLERS
+  # ----------------------------------------------------------
+
+  sellers:
+    source_id: olist_sellers
+    file_pattern: olist_sellers_dataset.csv
+
+    bronze_table: bronze_sellers
+    silver_table: silver_sellers
+
+    load_type: scd2
+
+    business_keys:
+      - seller_id
+    tracked_columns:
+      - seller_zip_code_prefix
+      - seller_city
+      - seller_state
+
+    columns:
+      - name: seller_id
+        type: string
+        nullable: false
+
+      - name: seller_zip_code_prefix
+        type: string
+        nullable: true
+
+      - name: seller_city
+        type: string
+        nullable: true
+
+      - name: seller_state
+        type: string
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - seller_id
+
+      unique_keys:
+        - seller_id
+
+  # ----------------------------------------------------------
+  # 8. GEOLOCATION
+  # ----------------------------------------------------------
+
+  geolocation:
+    source_id: olist_geolocation
+    file_pattern: olist_geolocation_dataset.csv
+
+    bronze_table: bronze_geolocation
+    silver_table: silver_geolocation
+
+    load_type: overwrite_clean
+
+    # ZIP prefixes are not unique in the source.
+    # Preserve distinct geographic records in Silver.
+    business_keys:
+      - geolocation_zip_code_prefix
+      - geolocation_lat
+      - geolocation_lng
+      - geolocation_city
+      - geolocation_state
+
+    columns:
+      - name: geolocation_zip_code_prefix
+        type: string
+        nullable: false
+
+      - name: geolocation_lat
+        type: double
+        nullable: false
+
+      - name: geolocation_lng
+        type: double
+        nullable: false
+
+      - name: geolocation_city
+        type: string
+        nullable: true
+
+      - name: geolocation_state
+        type: string
+        nullable: true
+
+    quality_rules:
+      not_null:
+        - geolocation_zip_code_prefix
+        - geolocation_lat
+        - geolocation_lng
+
+      coordinate_ranges:
+        geolocation_lat:
+          min: -90
+          max: 90
+        geolocation_lng:
+          min: -180
+          max: 180
+
+  # ----------------------------------------------------------
+  # 9. PRODUCT CATEGORY TRANSLATION
+  # ----------------------------------------------------------
+
+  product_category_translation:
+    source_id: olist_product_category_translation
+    file_pattern: product_category_name_translation.csv
+
+    bronze_table: bronze_product_category_translation
+    silver_table: silver_product_category_translation
+
+    load_type: scd1
+
+    business_keys:
+      - product_category_name
+
+    columns:
+      - name: product_category_name
+        type: string
+        nullable: false
+
+      - name: product_category_name_english
+        type: string
+        nullable: false
+
+    quality_rules:
+      not_null:
+        - product_category_name
+        - product_category_name_english
+
+      unique_keys:
+        - product_category_name
+
