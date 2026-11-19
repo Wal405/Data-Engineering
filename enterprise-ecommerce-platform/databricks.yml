@@ -1,0 +1,14 @@
+
+bundle:
+  name: enterprise_ecommerce_platform
+
+sync:
+  include:
+    - notebooks/**
+    - src/**
+    - config/**
+
+targets:
+  dev:
+    default: true
+    mode: development
