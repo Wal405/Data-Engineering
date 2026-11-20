@@ -68,7 +68,8 @@ def build_roster(spark):
         .filter(
             F.col("old_name").isNotNull()
             & ~F.col("old_device").eqNullSafe(F.col("new_device"))
-        ).alias("c")
+        )
+        .alias("c")
         .join(
             sessions.alias("v"),
             F.col("c.new_device") == F.col("v.device_id"),
@@ -77,19 +78,24 @@ def build_roster(spark):
         .groupBy("c.athlete_id")
         .agg(F.min("v.session_date").alias("device_date"))
     )
+
     # Read Bronze coach labels.
     coach = read(spark, "bronze_coach_labels")
+
     def normalize(col):
         return F.lower(
             F.regexp_replace(F.trim(col), r"\s+", " ")
         )
+
     # Match full names and abbreviated names.
     athletes = roster.select("athlete_id", "name").distinct()
     parts = F.split(normalize(F.col("name")), r"\s+")
+
     full_names = athletes.select(
         "athlete_id",
         normalize(F.col("name")).alias("clean_name")
     )
+
     short_names = (
         athletes
         .filter(F.size(parts) >= 2)
@@ -103,13 +109,16 @@ def build_roster(spark):
             ).alias("clean_name")
         )
     )
+
     name_lookup = full_names.unionByName(short_names).distinct()
+
     coach = (
         coach
         .withColumn("session_date", F.to_date("session_date"))
         .withColumn("clean_name", normalize(F.col("athlete_name")))
         .join(name_lookup, "clean_name", "inner")
     )
+
     # Find first coach label for new squad or new athlete.
     coach_dates = (
         changed.alias("c")
@@ -125,6 +134,7 @@ def build_roster(spark):
         .groupBy("c.athlete_id")
         .agg(F.min("l.session_date").alias("coach_date"))
     )
+
     changes = (
         changed
         .join(device_dates, "athlete_id", "left")
@@ -142,11 +152,14 @@ def build_roster(spark):
             ).alias("change_date")
         )
     )
+
     if changes.filter(F.col("change_date").isNull()).limit(1).count():
         raise ValueError("Could not detect date for a roster change.")
+
     # Test: Display detected dates.
     print("Detected roster changes:")
     changes.orderBy("athlete_id").show(truncate=False)
+
     # Fail clearly if the required September records are missing.
     missing = (
         changes.select("athlete_id")
@@ -156,10 +169,12 @@ def build_roster(spark):
             "left_anti"
         )
     )
+
     if missing.limit(1).count():
         raise ValueError(
             "September roster is missing a changed athlete."
         )
+
     old = (
         july.alias("r")
         .join(changes.alias("c"), "athlete_id", "left")
@@ -179,6 +194,7 @@ def build_roster(spark):
             ).alias("valid_to")
         )
     )
+
     new = (
         september.alias("r")
         .join(changes.alias("c"), "athlete_id")
@@ -193,11 +209,13 @@ def build_roster(spark):
             F.lit("2026-12-31").cast("date").alias("valid_to")
         )
     )
+
     history = old.unionByName(new)
 
     # Check for overlapping ownership of the same device.
     a = history.alias("a")
     b = history.alias("b")
+
     overlaps = a.join(
         b,
         (F.col("a.device_id") == F.col("b.device_id")) &
@@ -206,17 +224,21 @@ def build_roster(spark):
         (F.col("b.valid_from") <= F.col("a.valid_to")),
         "inner"
     )
+
     if overlaps.limit(1).count():
         raise ValueError(
             "Overlapping device ownership found in athlete history."
         )
+
     save(history, "silver_athlete_history")
 
     snapshot = history.filter(
         (F.col("valid_from") <= F.lit("2026-08-14").cast("date")) &
         (F.col("valid_to") >= F.lit("2026-08-14").cast("date"))
     )
+
     save(snapshot, "silver_roster_aug14")
+
     return history
 
 
