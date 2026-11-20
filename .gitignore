@@ -20,3 +20,16 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Spark temporary files
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+
+
+# ZIP files
+*.zip
+
+# Logs
+*.log
